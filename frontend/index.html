@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Cortex — Memory-Graph Research Agent</title>
+<!-- Vendored locally (vis-network 9.1.9, MIT — see vendor/vis-network.LICENSE.txt)
+     so the whole app works fully offline with zero CDN dependency. -->
+<script src="vendor/vis-network.min.js"></script>
+<style>
+  :root {
+    --bg: #0b0e14;
+    --panel: #11151f;
+    --panel-2: #161b28;
+    --border: #232a3b;
+    --text: #e6e9f0;
+    --muted: #8a92a6;
+    --accent: #6ee7ff;
+    --accent-2: #a78bfa;
+    --good: #4ade80;
+    --warn: #fbbf24;
+    --bad: #f87171;
+    --mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+    display: flex;
+    flex-direction: column;
+  }
+  header {
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  header h1 {
+    font-size: 18px;
+    margin: 0;
+    letter-spacing: 0.3px;
+  }
+  header h1 span { color: var(--accent); }
+  header p { margin: 0; color: var(--muted); font-size: 13px; }
+  main {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 420px 1fr;
+    min-height: 0;
+  }
+  .left {
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .controls {
+    padding: 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .controls textarea {
+    width: 100%;
+    resize: vertical;
+    min-height: 54px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    padding: 10px;
+    font-size: 13px;
+    font-family: inherit;
+  }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .epoch-btn, .run-btn {
+    border: 1px solid var(--border);
+    background: var(--panel-2);
+    color: var(--text);
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-size: 12.5px;
+    cursor: pointer;
+  }
+  .epoch-btn.active { border-color: var(--accent); color: var(--accent); }
+  .run-btn {
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    color: #0b0e14;
+    font-weight: 600;
+    border: none;
+  }
+  .run-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .hint { color: var(--muted); font-size: 12px; line-height: 1.5; }
+  .section-title {
+    padding: 10px 16px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+  }
+  #log {
+    flex: 1 1 40%;
+    overflow-y: auto;
+    padding: 12px 16px;
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.6;
+  }
+  .log-line { margin-bottom: 6px; display: flex; gap: 8px; }
+  .log-node {
+    color: var(--accent-2);
+    flex-shrink: 0;
+    min-width: 108px;
+  }
+  .log-line.contradiction .log-node { color: var(--bad); }
+  #answer {
+    flex: 1 1 45%;
+    overflow-y: auto;
+    padding: 14px 16px;
+    border-top: 1px solid var(--border);
+    font-size: 13px;
+    line-height: 1.55;
+    white-space: pre-wrap;
+  }
+  #answer .placeholder { color: var(--muted); }
+  .right { position: relative; min-height: 0; }
+  #graph { width: 100%; height: 100%; }
+  .legend {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    background: rgba(17, 21, 31, 0.9);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 11.5px;
+    color: var(--muted);
+    backdrop-filter: blur(4px);
+  }
+  .legend div { display: flex; align-items: center; gap: 6px; margin: 3px 0; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  .badge {
+    display: inline-block;
+    padding: 1px 7px;
+    border-radius: 999px;
+    font-size: 10.5px;
+    border: 1px solid var(--border);
+    color: var(--muted);
+  }
+  .stat-bar {
+    position: absolute;
+    bottom: 14px;
+    left: 14px;
+    background: rgba(17, 21, 31, 0.9);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 12px;
+    color: var(--muted);
+    display: flex;
+    gap: 14px;
+  }
+  .stat-bar b { color: var(--text); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Cortex<span>.</span> memory-graph research agent</h1>
+  <p>A multi-agent LangGraph pipeline with a persistent Graph-RAG memory that catches its own contradictions.</p>
+</header>
+<main>
+  <div class="left">
+    <div class="controls">
+      <textarea id="query">Who leads AgentBench and who runs Arcline AI?</textarea>
+      <div class="row">
+        <span class="hint" style="min-width:100%">Simulate research happening at two different points in time:</span>
+        <button class="epoch-btn active" data-epoch="1">Epoch 1 — 6 months ago</button>
+        <button class="epoch-btn" data-epoch="2">Epoch 2 — today</button>
+      </div>
+      <div class="row">
+        <button class="run-btn" id="run">Run research pass</button>
+        <span class="hint" id="status"></span>
+      </div>
+      <div class="hint">Memory persists across runs and across epochs — run Epoch 1, then Epoch 2, and watch Cortex catch the facts that changed.</div>
+    </div>
+    <div class="section-title">Live agent trace</div>
+    <div id="log"><div class="hint">Run a query to see the plan → research → reconcile → propose → critique loop stream in live.</div></div>
+    <div class="section-title">Answer</div>
+    <div id="answer"><span class="placeholder">No answer yet.</span></div>
+  </div>
+  <div class="right">
+    <div id="graph"></div>
+    <div class="legend">
+      <div><span class="dot" style="background:#6ee7ff"></span> active fact</div>
+      <div><span class="dot" style="background:#3a3f52"></span> superseded fact</div>
+      <div><span class="dot" style="background:#f87171"></span> just contradicted</div>
+    </div>
+    <div class="stat-bar" id="stats">
+      <span>nodes: <b id="stat-nodes">0</b></span>
+      <span>facts: <b id="stat-edges">0</b></span>
+      <span>contradictions this run: <b id="stat-contra">0</b></span>
+    </div>
+  </div>
+</main>
+
+<script>
+const API = "";
+let epoch = 1;
+let network = null;
+
+document.querySelectorAll(".epoch-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".epoch-btn").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    epoch = parseInt(btn.dataset.epoch, 10);
+  });
+});
+
+function logLine(node, message, isContradiction) {
+  const log = document.getElementById("log");
+  if (log.querySelector(".hint")) log.innerHTML = "";
+  const div = document.createElement("div");
+  div.className = "log-line" + (isContradiction ? " contradiction" : "");
+  div.innerHTML = `<span class="log-node">${node}</span><span>${message}</span>`;
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+}
+
+async function loadGraph(highlightEdgeIds) {
+  const res = await fetch(`${API}/api/graph`);
+  const data = await res.json();
+  document.getElementById("stat-nodes").textContent = data.nodes.length;
+  document.getElementById("stat-edges").textContent = data.fact_count;
+
+  const nodes = new vis.DataSet(data.nodes.map(n => ({ id: n.id, label: n.label })));
+  const edges = new vis.DataSet(data.edges.map(e => {
+    const superseded = e.status === "superseded";
+    const highlighted = highlightEdgeIds && highlightEdgeIds.has(e.id);
+    return {
+      id: e.id,
+      from: e.source,
+      to: e.target,
+      label: e.relation,
+      dashes: superseded,
+      color: {
+        color: highlighted ? "#f87171" : (superseded ? "#3a3f52" : "#6ee7ff"),
+        highlight: "#f87171",
+      },
+      font: { color: superseded ? "#5b6272" : "#c9d3e6", size: 11, strokeWidth: 0 },
+      width: superseded ? 1 : 2,
+      arrows: "to",
+    };
+  }));
+
+  const options = {
+    autoResize: true,
+    nodes: {
+      shape: "dot",
+      size: 14,
+      color: { background: "#161b28", border: "#6ee7ff" },
+      font: { color: "#e6e9f0", size: 13 },
+      borderWidth: 2,
+    },
+    edges: { smooth: { type: "dynamic" } },
+    physics: { stabilization: true, barnesHut: { gravitationalConstant: -6000, springLength: 160 } },
+    interaction: { hover: true },
+  };
+
+  if (!network) {
+    network = new vis.Network(document.getElementById("graph"), { nodes, edges }, options);
+  } else {
+    network.setData({ nodes, edges });
+  }
+}
+
+document.getElementById("run").addEventListener("click", async () => {
+  const query = document.getElementById("query").value.trim();
+  if (!query) return;
+  const runBtn = document.getElementById("run");
+  runBtn.disabled = true;
+  document.getElementById("status").textContent = "running…";
+  document.getElementById("log").innerHTML = "";
+  document.getElementById("answer").innerHTML = '<span class="placeholder">Thinking…</span>';
+
+  const contraEdgeIds = new Set();
+  let contraCount = 0;
+
+  const es = new EventSource(`${API}/api/research/stream?query=${encodeURIComponent(query)}&epoch=${epoch}`);
+  es.onmessage = (msg) => {
+    const event = JSON.parse(msg.data);
+    if (event.type === "step") {
+      const isContra = event.node === "reconcile_memory" && event.contradictions && event.contradictions.length;
+      logLine(event.node, event.message, !!isContra);
+      if (isContra) {
+        contraCount = event.contradictions.length;
+        document.getElementById("stat-contra").textContent = contraCount;
+      }
+    } else if (event.type === "done") {
+      document.getElementById("answer").textContent = event.final_answer;
+      document.getElementById("status").textContent =
+        `done — ${event.revise_count} revision(s), ${event.contradiction_count} contradiction(s)`;
+      runBtn.disabled = false;
+      loadGraph(contraEdgeIds);
+      es.close();
+    }
+  };
+  es.onerror = () => {
+    document.getElementById("status").textContent = "connection closed";
+    runBtn.disabled = false;
+    es.close();
+  };
+});
+
+loadGraph();
+</script>
+</body>
+</html>

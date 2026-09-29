@@ -1,0 +1,22 @@
+# Core — everything needed for the zero-dependency demo (mock LLM, offline
+# search, in-memory graph, hashing embeddings). No API keys required.
+langgraph==1.2.12
+fastapi==0.141.1
+uvicorn[standard]==0.46.0
+chromadb==1.5.9
+networkx==3.6.1
+python-dotenv==1.2.2
+
+# Optional — enable a real LLM (LLM_BACKEND=groq)
+groq==1.7.0
+
+# Optional — enable a real graph database (GRAPH_BACKEND=neo4j)
+neo4j==6.3.1
+
+# Optional — enable live web search instead of the offline fixture corpus
+# (SEARCH_BACKEND=live)
+ddgs==9.16.0
+
+# Optional — real semantic embeddings instead of the offline hashing
+# embedding (EMBEDDING_BACKEND=st). Pulls in torch/sentence-transformers.
+# sentence-transformers==3.3.1
